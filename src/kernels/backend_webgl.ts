@@ -79,6 +79,69 @@ import {UnaryOpProgram} from './webgl/unaryop_gpu';
 import {WebGLQuery} from './webgl/webgl_types';
 import * as webgl_util from './webgl/webgl_util';
 
+declare let OffscreenCanvas: {
+  new (width: number, height: number): OffscreenCanvas;
+  prototype: OffscreenCanvas;
+};
+
+export interface OffscreenCanvas extends HTMLCanvasElement {
+  /**
+   * Gets or sets the height of a canvas element on a document.
+   */
+  height: number;
+  /**
+   * Gets or sets the width of a canvas element on a document.
+   */
+  width: number;
+  /**
+   * Returns an object that provides methods and properties for drawing and
+   * manipulating images and graphics on a canvas element in a document. A
+   * context object includes information about colors, line widths, fonts, and
+   * other graphic parameters that can be drawn on a canvas.
+   * @param contextId The identifier (ID) of the type of canvas to create.
+   * Internet Explorer 9 and Internet Explorer 10 support only a 2-D context
+   * using canvas.getContext("2d"); IE11 Preview also supports 3-D or WebGL
+   * context using canvas.getContext("experimental-webgl");
+   */
+  getContext(contextId: '2d', contextAttributes?: Canvas2DContextAttributes):
+      CanvasRenderingContext2D|null;
+  getContext(
+      contextId: 'webgl'|'experimental-webgl',
+      contextAttributes?: WebGLContextAttributes): WebGLRenderingContext|null;
+  getContext(contextId: string, contextAttributes?: {}):
+      CanvasRenderingContext2D|WebGLRenderingContext|null;
+  /**
+   * Returns a blob object encoded as a Portable Network Graphics (PNG) format
+   * from a canvas image or drawing.
+   */
+  msToBlob(): Blob;
+  toBlob(callback: (result: Blob|null) => void, type?: string): void;
+  /**
+   * Returns the content of the current canvas as an image that you can use as a
+   * source for another canvas or an HTML element.
+   * @param type The standard MIME type for the image format to return. If you
+   * do not specify this parameter, the default value is a PNG format image.
+   */
+  // tslint:disable-next-line: no-any
+  toDataURL(type?: string, ...args: any[]): string;
+  addEventListener<K extends keyof HTMLElementEventMap>(
+      type: K,
+      // tslint:disable-next-line: no-any
+      listener: (this: OffscreenCanvas, ev: HTMLElementEventMap[K]) => any,
+      options?: boolean|AddEventListenerOptions): void;
+  addEventListener(
+      type: string, listener: EventListenerOrEventListenerObject,
+      options?: boolean|AddEventListenerOptions): void;
+  removeEventListener<K extends keyof HTMLElementEventMap>(
+      type: K,
+      // tslint:disable-next-line: no-any
+      listener: (this: OffscreenCanvas, ev: HTMLElementEventMap[K]) => any,
+      options?: boolean|EventListenerOptions): void;
+  removeEventListener(
+      type: string, listener: EventListenerOrEventListenerObject,
+      options?: boolean|EventListenerOptions): void;
+}
+
 type TimerNode = RecursiveArray<Promise<number>>|Promise<number>;
 export interface CPUTimerQuery {
   startMs: number;
@@ -97,7 +160,11 @@ export interface WebGLTimingInfo extends TimingInfo {
 
 // Empirically determined constant used to decide the number of bytes on GPU
 // before we start paging. The bytes are this constant * screen area * dpi.
-const BEFORE_PAGING_CONSTANT = 300;
+/**
+ * commented out bc unused due to other commented out code below for
+ * NUM_BYTES_BEFORE_PAGING
+ */
+// const BEFORE_PAGING_CONSTANT = 300;
 // Tensors with size <= than this will be uploaded as uniforms, not textures.
 export const SIZE_UPLOAD_UNIFORM = 32;
 
@@ -118,8 +185,8 @@ export class MathBackendWebGL implements KernelBackend {
    */
   private NUM_BYTES_BEFORE_PAGING: number;
 
-  private canvas: HTMLCanvasElement;
-  private fromPixelsCanvas: HTMLCanvasElement;
+  private canvas: HTMLCanvasElement|OffscreenCanvas;
+  private fromPixelsCanvas: HTMLCanvasElement|OffscreenCanvas;
 
   private programTimersStack: TimerNode[];
   private activeTimers: TimerNode[];
@@ -142,7 +209,8 @@ export class MathBackendWebGL implements KernelBackend {
     });
   }
   fromPixels(
-      pixels: ImageData|HTMLImageElement|HTMLCanvasElement|HTMLVideoElement,
+      pixels: ImageData|HTMLImageElement|HTMLCanvasElement|OffscreenCanvas|
+      HTMLVideoElement,
       numChannels: number): Tensor3D {
     if (pixels == null) {
       throw new Error('MathBackendWebGL.writePixels(): pixels can not be null');
@@ -152,7 +220,7 @@ export class MathBackendWebGL implements KernelBackend {
 
     if (pixels instanceof HTMLVideoElement) {
       if (this.fromPixelsCanvas == null) {
-        if (!ENV.get('IS_BROWSER')) {
+        if (!(ENV.get('IS_BROWSER') || ENV.get('IS_WORKER'))) {
           throw new Error(
               'Can\'t read pixels from HTMLImageElement outside the browser.');
         }
@@ -379,11 +447,15 @@ export class MathBackendWebGL implements KernelBackend {
   private gpgpuCreatedLocally: boolean;
 
   constructor(private gpgpu?: GPGPUContext, private delayedStorage = true) {
-    if (ENV.get('WEBGL_VERSION') < 1) {
-      throw new Error('WebGL is not supported on this device');
-    }
+    /** TODO: restore once we can detect WEBGL_VERSION in a Worker */
+    // if (ENV.get('WEBGL_VERSION') < 1) {
+    //   throw new Error('WebGL is not supported on this device');
+    // }
     if (ENV.get('IS_BROWSER')) {
       this.canvas = document.createElement('canvas');
+    } else if (ENV.get('IS_WORKER')) {
+      this.canvas =
+          new OffscreenCanvas(10, 10);  // no idea if dimensions matter
     }
     if (gpgpu == null) {
       this.gpgpu = new GPGPUContext(gpgpu_util.createWebGLContext(this.canvas));
@@ -391,18 +463,23 @@ export class MathBackendWebGL implements KernelBackend {
     } else {
       this.gpgpuCreatedLocally = false;
     }
+    /**
+     * temporarily hard-coded w/o reference to nonexistent window for Worker env
+     * TODO: figure out a reasonable value for Worker env
+     */
+    this.NUM_BYTES_BEFORE_PAGING = 1058400000;
     // Use the device screen's resolution as a heuristic to decide on the
     // maximum memory allocated on the GPU before starting to page.
-    this.NUM_BYTES_BEFORE_PAGING =
-        (window.screen.height * window.screen.width * window.devicePixelRatio) *
-        BEFORE_PAGING_CONSTANT;
+    // this.NUM_BYTES_BEFORE_PAGING =
+    //     (window.screen.height * window.screen.width *
+    //     window.devicePixelRatio) * BEFORE_PAGING_CONSTANT;
     this.textureManager = new TextureManager(this.gpgpu);
   }
 
   getGPGPUContext(): GPGPUContext {
     return this.gpgpu;
   }
-  getCanvas(): HTMLCanvasElement {
+  getCanvas(): HTMLCanvasElement|OffscreenCanvas {
     return this.canvas;
   }
 
@@ -1268,7 +1345,7 @@ export class MathBackendWebGL implements KernelBackend {
   }
 }
 
-if (ENV.get('IS_BROWSER')) {
+if (ENV.get('IS_BROWSER') || ENV.get('IS_WORKER')) {
   ENV.registerBackend('webgl', () => new MathBackendWebGL(), 2 /* priority */);
 }
 

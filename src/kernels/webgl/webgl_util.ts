@@ -33,7 +33,12 @@ export function createWebGLRenderingContextFromCanvas(
     attributes: WebGLContextAttributes): WebGLRenderingContext {
   let gl: WebGLRenderingContext;
 
-  const webglVersion = ENV.get('WEBGL_VERSION');
+  /**
+   * TODO: figure out how to detect WEBGL_VERSION in a Worker and remove the
+   * hardcoded v2
+   */
+  const webglVersion = 2;
+  // const webglVersion = ENV.get('WEBGL_VERSION');
   if (webglVersion === 2) {
     gl = canvas.getContext('webgl2', attributes) as WebGLRenderingContext;
   } else if (webglVersion === 1) {
@@ -42,9 +47,10 @@ export function createWebGLRenderingContextFromCanvas(
         WebGLRenderingContext;
   }
 
-  if (webglVersion === 0 || gl == null) {
-    throw new Error('This browser does not support WebGL.');
-  }
+  /** TODO: uncomment once not hardcoding WebGL version in Worker env */
+  // if (webglVersion === 0 || gl == null) {
+  //   throw new Error('This browser does not support WebGL.');
+  // }
   return gl;
 }
 

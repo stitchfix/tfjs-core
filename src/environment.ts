@@ -32,6 +32,8 @@ export interface Features {
   'DEBUG'?: boolean;
   // Whether we are in a browser (as versus, say, node.js) environment.
   'IS_BROWSER'?: boolean;
+  // Whether we are in a Web Worker environment.
+  'IS_WORKER'?: boolean;
   // Whether we are in the Node.js environment.
   'IS_NODE'?: boolean;
   // The disjoint_query_timer extension version.
@@ -362,6 +364,11 @@ export class Environment {
       return false;
     } else if (feature === 'IS_BROWSER') {
       return typeof window !== 'undefined';
+    } else if (feature === 'IS_WORKER') {
+      /** TODO: refine this logic! better way(s) to test for Worker env? */
+      return (typeof window === 'undefined') &&
+          (typeof process !== 'undefined') &&
+          (typeof process.versions.node === 'undefined');
     } else if (feature === 'IS_NODE') {
       return (typeof process !== 'undefined') &&
           (typeof process.versions.node !== 'undefined');
