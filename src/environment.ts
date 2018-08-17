@@ -19,7 +19,13 @@ import * as device_util from './device_util';
 import {doc} from './doc';
 import {Engine, MemoryInfo} from './engine';
 import {KernelBackend} from './kernels/backend';
+import {OffscreenCanvas} from './kernels/backend_webgl';
 import * as util from './util';
+
+declare let OffscreenCanvas: {
+  new (width: number, height: number): OffscreenCanvas;
+  prototype: OffscreenCanvas;
+};
 
 export enum Type {
   NUMBER,
@@ -32,6 +38,8 @@ export interface Features {
   'DEBUG'?: boolean;
   // Whether we are in a browser (as versus, say, node.js) environment.
   'IS_BROWSER'?: boolean;
+  // Whether we are in a Web Worker environment.
+  'IS_WORKER'?: boolean;
   // The disjoint_query_timer extension version.
   // 0: disabled, 1: EXT_disjoint_timer_query, 2:
   // EXT_disjoint_timer_query_webgl2.
@@ -79,7 +87,16 @@ function getWebGLRenderingContext(webGLVersion: number): WebGLRenderingContext {
     throw new Error('Cannot get WebGL rendering context, WebGL is disabled.');
   }
 
-  const tempCanvas = document.createElement('canvas');
+  /** TODO: integrate with IS_BROWSER and IS_WORKER, etc */
+  let tempCanvas;
+  try {
+    tempCanvas = document.createElement('canvas');
+  } catch (err) {
+    if (err instanceof ReferenceError &&
+        err.message === 'document is not defined') {
+      tempCanvas = new OffscreenCanvas(1, 1);
+    }
+  }
 
   if (webGLVersion === 1) {
     return (tempCanvas.getContext('webgl') ||
@@ -306,6 +323,11 @@ export class Environment {
       return false;
     } else if (feature === 'IS_BROWSER') {
       return typeof window !== 'undefined';
+    } else if (feature === 'IS_WORKER') {
+      /** TODO: refine this logic! better way(s) to test for Worker env? */
+      return (typeof window === 'undefined') &&
+          (typeof process !== 'undefined') &&
+          (typeof process.versions.node === 'undefined');
     } else if (feature === 'BACKEND') {
       return this.getBestBackendType();
     } else if (feature === 'WEBGL_DISJOINT_QUERY_TIMER_EXTENSION_VERSION') {

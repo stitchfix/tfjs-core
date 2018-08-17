@@ -20,9 +20,23 @@ let MAX_TEXTURE_SIZE: number = null;
 import * as util from '../../util';
 import {ENV} from '../../environment';
 
+import {OffscreenCanvas} from '../backend_webgl';
+
+declare let OffscreenCanvas: {
+  new (width: number, height: number): OffscreenCanvas;
+  prototype: OffscreenCanvas;
+};
+
 export function createWebGLRenderingContext(attributes: WebGLContextAttributes):
     WebGLRenderingContext {
-  const canvas = document.createElement('canvas');
+  let canvas;
+  if (ENV.get('IS_WORKER')) {
+    console.log('Hi there! 👋');
+
+    canvas = new OffscreenCanvas(1, 1);
+  } else {
+    canvas = document.createElement('canvas');
+  }
   canvas.width = 1;
   canvas.height = 1;
   return createWebGLRenderingContextFromCanvas(canvas, attributes);
@@ -33,7 +47,12 @@ export function createWebGLRenderingContextFromCanvas(
     attributes: WebGLContextAttributes): WebGLRenderingContext {
   let gl: WebGLRenderingContext;
 
-  const webglVersion = ENV.get('WEBGL_VERSION');
+  /**
+   * TODO: figure out how to detect WEBGL_VERSION in a Worker and remove the
+   * hardcoded v2
+   */
+  const webglVersion = 2;
+  // const webglVersion = ENV.get('WEBGL_VERSION');
   if (webglVersion === 2) {
     gl = canvas.getContext('webgl2', attributes) as WebGLRenderingContext;
   } else if (webglVersion === 1) {
@@ -41,10 +60,10 @@ export function createWebGLRenderingContextFromCanvas(
           canvas.getContext('experimental-webgl', attributes)) as
         WebGLRenderingContext;
   }
-
-  if (webglVersion === 0 || gl == null) {
-    throw new Error('This browser does not support WebGL.');
-  }
+  /** TODO: uncomment once not hardcoding WebGL version in Worker env */
+  // if (webglVersion === 0 || gl == null) {
+  //   throw new Error('This browser does not support WebGL.');
+  // }
   return gl;
 }
 
